@@ -87,6 +87,34 @@ impl Wall {
     }
 }
 
+enum PaddleLocation {
+    Left,
+    Right,
+}
+
+impl PaddleLocation {
+    fn position(&self) -> Vec2 {
+        match self {
+            PaddleLocation::Left => Vec2::new(LEFT_WALL + GAP_BETWEEN_PADDLE_AND_FLOOR + PADDLE_SIZE.x / 2.0, 0.),
+            PaddleLocation::Right => Vec2::new(RIGHT_WALL - GAP_BETWEEN_PADDLE_AND_FLOOR - PADDLE_SIZE.x / 2.0, 0.),
+        }
+    }
+}
+
+impl Paddle {
+    fn new(location: PaddleLocation) -> (Paddle, Sprite, Transform) {
+        (
+            Paddle,
+            Sprite::from_color(PADDLE_COLOR, Vec2::ONE),
+            Transform {
+                translation: location.position().extend(1.0),
+                scale: PADDLE_SIZE.extend(1.0),
+                ..default()
+            }
+        )
+    }
+}
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins)  // Add Bevy's default plugins (including Time)
@@ -110,18 +138,9 @@ fn setup(
 ) {
     commands.spawn(Camera2d);
 
-    // Paddle
-    let paddle_x = LEFT_WALL + GAP_BETWEEN_PADDLE_AND_FLOOR;
-
-    commands.spawn((
-        Sprite::from_color(PADDLE_COLOR, Vec2::ONE),
-        Transform {
-            translation: Vec3::new(paddle_x + WALL_THICKNESS / 2.0 + PADDLE_SIZE.x / 2.0, 0.0, 0.0),
-            scale: PADDLE_SIZE.extend(1.0),
-            ..default()
-        },
-        Paddle,
-    ));
+    // Paddles
+    commands.spawn(Paddle::new(PaddleLocation::Left));
+    commands.spawn(Paddle::new(PaddleLocation::Right));
 
     // Ball
     commands.spawn((
@@ -149,8 +168,8 @@ fn apply_velocity(mut query: Query<(&mut Transform, &Velocity)>, time: Res<Time>
 }
 
 fn move_paddle(
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut paddle_transform: Query<&mut Transform, With<Paddle>>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,  // Input resource for detecting key presses
+    mut paddle_query: Query<&mut Transform, With<Paddle>>,  // Query both paddles
     time: Res<Time>,
 ) {
     let mut direction = 0.0;
@@ -162,16 +181,18 @@ fn move_paddle(
         direction -= 1.0;
     }
 
-    // Calculate the new vertical paddle position based on player input
-    let new_paddle_position: f32 =
-        paddle_transform.single_mut().translation.y + direction * PADDLE_SPEED * time.delta_secs();
+    // We know the left paddle is at index 0
+    if let Some(mut paddle_transform) = paddle_query.iter_mut().next() {
+        // Calculate the new position based on user input and speed
+        let new_position = paddle_transform.translation.y + direction * PADDLE_SPEED * time.delta_secs();
 
-    // Update the paddle position
-    // making sure it doesn't cause the paddle to leave the arena
-    let upper_bound = TOP_WALL - WALL_THICKNESS / 2.0 - PADDLE_SIZE.y / 2.0 - PADDLE_PADDING;
-    let lower_bound = BOTTOM_WALL + WALL_THICKNESS / 2.0 + PADDLE_SIZE.y / 2.0 + PADDLE_PADDING;
+        // Restrict the paddle within the vertical boundaries of the screen
+        let upper_bound = TOP_WALL - WALL_THICKNESS / 2.0 - PADDLE_SIZE.y / 2.0 - PADDLE_PADDING;
+        let lower_bound = BOTTOM_WALL + WALL_THICKNESS / 2.0 + PADDLE_SIZE.y / 2.0 + PADDLE_PADDING;
 
-    paddle_transform.single_mut().translation.y = new_paddle_position.clamp(lower_bound, upper_bound);
+        // Set the new position within the bounds
+        paddle_transform.translation.y = new_position.clamp(lower_bound, upper_bound);
+    }
 }
 
 fn check_for_collisions(
